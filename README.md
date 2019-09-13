@@ -1,6 +1,6 @@
 # `@synvox/api`
 
-Simple request handling in React with without boilerplate using Suspense.
+Simple request handling in React using Suspense.
 
 ```
 npm i @synvox/api axios
@@ -110,10 +110,6 @@ return (
 );
 ```
 
-### Request de-duplication and Garbage Collection through Resource Counting
-
-The cache for `useApi` is inspired by the `Arc` type in rustlang. Each `GET` request is cached by url until there are no mounted components using the request. Once there are none, the cache for that url is cleared. A request for `/whoami` will only be made once regardless of it being used in only one component or hundreds.
-
 ### Refetching
 
 Call `touch` to refetch queries by url fragment(s).
@@ -167,7 +163,7 @@ sse.addEventListener('update', e => {
 
 ## Using `api` outside a component
 
-The api object can be used outside a hook.
+When the api object is used outside a component as its rendering, it will return an `axios` call to that url.
 
 ```js
 import { api } from './api';
