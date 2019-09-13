@@ -16,7 +16,7 @@ npm i @synvox/api axios
 - Small interface
   - `useApi` a suspense compatible hook for loading data
   - `api` a wrapper around axios
-  - `touch(keys: string[])` to refetch queries
+  - `touch(...keys: string[])` to refetch queries
 - Run any `GET` request through Suspense
 - Refresh requests without flickering
 - De-duplicates `GET` requests to the same url
