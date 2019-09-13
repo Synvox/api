@@ -201,11 +201,11 @@ export function createApi(
 
     useLayoutEffect(() => {
       // @TODO this could be optimized or use set methods when those are released
-      const newKeys = [...keysRef.current].filter(
+      const newKeys = Array.from(keysRef.current).filter(
         key => !previousKeysRef.current.has(key)
       );
 
-      const removedKeys = [...previousKeysRef.current].filter(
+      const removedKeys = Array.from(previousKeysRef.current).filter(
         key => !keysRef.current.has(key)
       );
 
