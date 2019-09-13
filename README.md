@@ -24,8 +24,8 @@ npm i @synvox/api axios
 
 ## Basic Example
 
-```tsx
-import {createApi} from '@synvox/api';
+```js
+import { createApi } from '@synvox/api';
 import axios from 'axios';
 
 const { useApi } = createApi(
@@ -43,14 +43,24 @@ export useApi;
 
 import { useApi } from './api'
 
-function MyReactComponent() {
+function Post({postId}) {
   const api = useApi();
 
-  // Suspends with a GET to https://your-api.com/users/me
-  // then returns the json response when the request fulfills
-  const user = api.users.me() as {name: string};
+  const user = api.users.me.get(); // GET https://your-api.com/users/me
+  const post = api.posts[postId].get(); // GET https://your-api.com/posts/{postId}
+  const comments = api.comments.get({postId: post.id}); // GET https://your-api.com/comments?post_id={postId}
 
-  return <>Hello {user.name}!</>
+  const authorName = post.authorId === user.id
+    ? 'You'
+    : api.users[post.authorId].get().name// GET https://your-api.com/users/{post.authorId}
+
+  return <>
+    <h2>{post.title} by {authorName}</h2>
+    <p>{post.body}</p>
+    <ul>
+      {comments.map(comment=><li key={comment.id}>{comment.body}</li>)}
+    </ul>
+  </>;
 }
 
 ```
