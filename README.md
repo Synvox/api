@@ -30,7 +30,7 @@ import axios from 'axios';
 
 const { useApi } = createApi(
   axios.create({
-    baseUrl: 'https://your-api.com',
+    baseURL: 'https://your-api.com',
     headers: {
       'Authorization': 'Bearer your-token-here'
     }
