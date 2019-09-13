@@ -6,6 +6,10 @@ Simple request handling in React using Suspense.
 npm i @synvox/api axios
 ```
 
+## CodeSandbox
+
+[![Open on CodeSandbox](https://codesandbox.io/static/img/play-codesandbox.svg)](https://codesandbox.io/s/stupefied-easley-l9djw?fontsize=14)
+
 ## Features
 
 - Wrapper around `axios`. Pass in an `axios` instance of your choosing
