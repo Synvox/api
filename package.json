@@ -1,6 +1,6 @@
 {
   "name": "@synvox/api",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "main": "dist/index.js",
   "module": "dist/useapi.esm.js",
   "typings": "dist/index.d.ts",
@@ -12,11 +12,12 @@
     "start": "tsdx watch",
     "build": "tsdx build",
     "test": "tsdx test",
-    "lint": "tsdx lint"
+    "lint": "tsdx lint src",
+    "prepublish": "npm run build"
   },
   "husky": {
     "hooks": {
-      "pre-commit": "tsdx lint"
+      "pre-commit": "tsdx lint src"
     }
   },
   "prettier": {
