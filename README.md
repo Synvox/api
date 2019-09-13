@@ -1,5 +1,10 @@
 # `@synvox/api`
 
+![Travis (.org)](https://img.shields.io/travis/synvox/api)
+![Codecov](https://img.shields.io/codecov/c/github/synvox/api)
+![Bundle Size](https://badgen.net/bundlephobia/minzip/@synvox/api)
+![License](https://badgen.net/npm/license/@synvox/api)
+
 Simple request handling in React using Suspense.
 
 ```
