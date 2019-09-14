@@ -14,7 +14,40 @@ import { act } from 'react-dom/test-utils';
 
 let mock = new MockAdapter(axios, { delayResponse: 1 });
 
-const { useApi, api, touch, reset } = createApi(axios);
+// Example hateoas link binder
+function bindLinks(object: any, loadUrl: (url: string) => unknown) {
+  if (!object || typeof object !== 'object') return object;
+  const { '@links': links } = object;
+  if (!links) return object;
+
+  const returned: any = Array.isArray(object) ? [] : {};
+
+  for (let [key, value] of Object.entries(object)) {
+    if (value && typeof value === 'object') {
+      returned[key] = bindLinks(value, loadUrl);
+    } else returned[key] = value;
+  }
+
+  if (!links) return returned;
+
+  for (let [key, url] of Object.entries(links)) {
+    if (!object[key]) {
+      Object.defineProperty(returned, key, {
+        get() {
+          return loadUrl(url as string);
+        },
+        enumerable: false,
+        configurable: false,
+      });
+    }
+  }
+
+  return returned;
+}
+
+const { useApi, api, touch, reset } = createApi(axios, {
+  modifier: bindLinks,
+});
 
 function renderSuspending(fn: FunctionComponent) {
   const Component = fn;
@@ -111,6 +144,26 @@ it('deduplicates requests', async () => {
   expect(element!.textContent).toEqual('yes');
 });
 
+it('deduplicates requests with suspend', async () => {
+  mock.onGet('/values/123').reply(200, { some_value: 123 });
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    const suspend = useSuspend();
+    const { data: value } = suspend(
+      () => api.values[123]() as { someValue: number }
+    );
+
+    const value2 = api.values[123]() as { someValue: number };
+
+    return <div data-testid="element">{value === value2 ? 'yes' : 'no'}</div>;
+  });
+
+  const element = await waitForElement(() => queryByTestId('element'));
+
+  expect(element!.textContent).toEqual('yes');
+});
+
 it('works with useSuspend', async () => {
   mock.onGet('/values/123').reply(200, { some_value: 123 });
 
@@ -141,38 +194,44 @@ it('refetches when touch is called', async () => {
   let valueRef = { current: 1 };
   let rerenders = 0;
   mock.onGet('/val').reply(() => [200, { value: valueRef.current }]);
+  mock.onGet('/null').reply(() => [404]);
 
   const { queryByTestId } = renderSuspending(() => {
     const api = useApi();
     const { value } = api.val.get() as { value: number };
+    const nothing = api.null.get() as string | null;
     rerenders++;
 
-    return <div data-testid={`element-${value}`}>{value}</div>;
+    return (
+      <div data-testid={`element-${value}`}>
+        {value} {nothing === null ? 'null' : ''}
+      </div>
+    );
   });
 
   let element = await waitForElement(() =>
     queryByTestId(`element-${valueRef.current}`)
   );
 
-  expect(element!.textContent).toEqual('1');
+  expect(element!.textContent).toEqual('1 null');
   valueRef.current = 2;
 
   await act(async () => {
-    await touch('val');
+    await touch('val', 'null');
   });
 
   element = await waitForElement(() =>
     queryByTestId(`element-${valueRef.current}`)
   );
 
-  expect(element!.textContent).toEqual('2');
+  expect(element!.textContent).toEqual('2 null');
 
   await act(async () => {
     // make sure touching something else does not cause this to rerender
     await touch('something');
   });
 
-  expect(rerenders).toBe(2);
+  expect(rerenders).toBe(3);
 });
 
 it('removes unused', async () => {
@@ -224,7 +283,7 @@ it('removes unused', async () => {
 
   expect(element!.textContent).toEqual('1');
 
-  expect(suspenseCount).toBe(3);
+  expect(suspenseCount).toBe(2);
 });
 
 it('supports wrapping axios in api without hook', async () => {
@@ -279,6 +338,28 @@ it('supports wrapping axios in api outside render phase', async () => {
   };
 
   expect(value2).toEqual('get!');
+});
+
+it('supports modifiers', async () => {
+  mock
+    .onGet('/val')
+    .reply(() => [200, { name: 'count', '@links': { count: '/count' } }]);
+  mock.onGet('/count').reply(() => [200, 1]);
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    const val = api.val.get() as { name: string; count: number };
+
+    return (
+      <div data-testid="element">
+        {val.name}:{val.count}
+      </div>
+    );
+  });
+
+  let element = await waitForElement(() => queryByTestId(`element`));
+
+  expect(element!.textContent).toEqual('count:1');
 });
 
 it('works with 404 returning null', async () => {

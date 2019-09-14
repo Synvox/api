@@ -206,6 +206,49 @@ const { data: users, loading } = suspend(() => api.users(), []);
 
 This still subscribes the component to updates from `touch`, request de-duplication, and garbage collection.
 
+## Binding Links
+
+HATEOAS is neat but rarely useful. But if you have it, you can build graph-like structures with `useApi`. Pass in a `modifier` to `createApi` to build custom link bindings:
+
+```js
+// Transforms responses like {'@links': {comments: '/comments?post_id=123' }} into
+// an object where data.comments will load /comments?post_id=123
+
+function bindLinks(object: any, loadUrl: (url: string) => unknown) {
+  if (!object || typeof object !== 'object') return object;
+  const { '@links': links } = object;
+  if (!links) return object;
+
+  const returned: any = Array.isArray(object) ? [] : {};
+
+  for (let [key, value] of Object.entries(object)) {
+    if (value && typeof value === 'object') {
+      returned[key] = bindLinks(value, loadUrl);
+    } else returned[key] = value;
+  }
+
+  if (!links) return returned;
+
+  for (let [key, url] of Object.entries(links)) {
+    if (!object[key]) {
+      Object.defineProperty(returned, key, {
+        get() {
+          return loadUrl(url as string);
+        },
+        enumerable: false,
+        configurable: false,
+      });
+    }
+  }
+
+  return returned;
+}
+
+const { useApi } = createApi(axios, {
+  modifier: bindLinks,
+});
+```
+
 ## Case Transformations
 
 By default `createApi` will `snake_case` urls, params, and json bodies in a request and `camelCase` json bodies in responses.

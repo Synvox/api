@@ -48,9 +48,11 @@ export function createApi(
   {
     requestCase = 'snake',
     responseCase = 'camel',
+    modifier = x => x,
   }: {
     requestCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'none';
     responseCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'none';
+    modifier?: (data: unknown, loadUrl: (url: string) => unknown) => any;
   } = {}
 ) {
   const caseToServer = caseMethods[requestCase];
@@ -63,6 +65,19 @@ export function createApi(
     const subscribersCount = cache.has(key)
       ? cache.get(key)!.subscribersCount
       : 0;
+
+    // registering promises in the cache does not require
+    // subscribing components to update.
+    if (isPromise(value)) {
+      cache.set(key, {
+        value: undefined,
+        promise: value as Promise<unknown>,
+        subscribersCount,
+      });
+
+      return;
+    }
+
     if (value instanceof Error) {
       // Give an error if this should throw an error
       cache.set(key, {
@@ -72,27 +87,25 @@ export function createApi(
         promise: null,
         subscribersCount,
       });
-    } else if (isPromise(value)) {
-      cache.set(key, {
-        value: undefined,
-        promise: value as Promise<unknown>,
-        subscribersCount,
-      });
     } else {
-      // Happy path, set the cache value. This may be a promise
       cache.set(key, { value, promise: null, subscribersCount });
     }
 
     subscribers.forEach(ref => ref.current && ref.current(key));
   }
 
-  function loadUrl(key: string) {
+  function loadUrl(
+    key: string,
+    subscribeComponentTo: (url: string) => void
+  ): unknown {
+    subscribeComponentTo(key);
+
     const { value = undefined, promise: existingPromise = undefined } =
       cache.get(key) || {};
 
     // return early if the value is already loaded
     if (value !== undefined) {
-      return value;
+      return modifier(value, key => loadUrl(key, subscribeComponentTo));
     }
 
     // piggy back promises to the same key
@@ -129,7 +142,7 @@ export function createApi(
     const casedEdges = edges.map(edge => transformKey(edge, caseToServer));
 
     // find the keys that these edges touch. E.g. `users` should touch `/users/1`
-    const cacheKeys = cache.keys();
+    const cacheKeys = Array.from(cache.keys());
     for (let key of casedEdges) {
       for (let cacheKey of cacheKeys) {
         if (!cacheKey.includes(key)) continue;
@@ -149,7 +162,7 @@ export function createApi(
             return transformKeys(data, caseFromServer);
           })
           .catch(err => {
-            if (err.response && err.response.statusCode === 404) return null;
+            if (err.response && err.response.status === 404) return null;
 
             return err;
           });
@@ -252,9 +265,9 @@ export function createApi(
           }) as AxiosPromise;
         }
 
-        if (!keysRef.current.has(url)) keysRef.current.add(url);
-
-        return loadUrl(url);
+        return loadUrl(url, (url: string) => {
+          if (!keysRef.current.has(url)) keysRef.current.add(url);
+        });
       }
     );
 
