@@ -46,5 +46,9 @@
   },
   "dependencies": {
     "query-string": "^6.8.3"
+  },
+  "jest": {
+    "coverageDirectory": "./coverage/",
+    "collectCoverage": true
   }
 }

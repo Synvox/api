@@ -4,6 +4,7 @@
 ![Codecov](https://img.shields.io/codecov/c/github/synvox/api)
 ![Bundle Size](https://badgen.net/bundlephobia/minzip/@synvox/api)
 ![License](https://badgen.net/npm/license/@synvox/api)
+[![Language grade: JavaScript](https://img.shields.io/lgtm/grade/javascript/g/Synvox/api.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Synvox/api/context:javascript)
 
 Simple request handling in React using Suspense.
 
