@@ -3,4 +3,5 @@ node_js:
   - '12'
 script:
   - npm ci
+  - npm t
   - npx codecov
