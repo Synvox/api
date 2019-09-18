@@ -162,7 +162,15 @@ export function createApi(
             return transformKeys(data, caseFromServer);
           })
           .catch(err => {
-            if (err.response && err.response.status === 404) return null;
+            if (err.response) {
+              if (err.response.status === 404) return null;
+              else {
+                err.response.data = transformKeys(
+                  err.response.data,
+                  caseFromServer
+                );
+              }
+            }
 
             return err;
           });
@@ -262,6 +270,14 @@ export function createApi(
                 : undefined,
             method,
             url,
+          }).catch(err => {
+            if (err.response) {
+              err.response.data = transformKeys(
+                err.response.data,
+                caseFromServer
+              );
+            }
+            throw err;
           }) as AxiosPromise;
         }
 
@@ -278,7 +294,7 @@ export function createApi(
    * @example
    *   await api.comments.post({}, { data: { body: '123' }})
    */
-  const api = createProxy<unknown>(
+  const api = createProxy<AxiosPromise>(
     caseToServer,
     (
       method: Method,
@@ -298,6 +314,11 @@ export function createApi(
             : undefined,
         method,
         url,
+      }).catch(err => {
+        if (err.response) {
+          err.response.data = transformKeys(err.response.data, caseFromServer);
+        }
+        throw err;
       });
     }
   );

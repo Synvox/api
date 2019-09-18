@@ -209,7 +209,7 @@ This still subscribes the component to updates from `touch`, request de-duplicat
 
 ## Binding Links
 
-HATEOAS is neat but rarely useful. But if you have it, you can build graph-like structures with `useApi`. Pass in a `modifier` to `createApi` to build custom link bindings:
+You can build graph-like structures with `useApi` by adding a modifier. Pass in a `modifier` to `createApi` to build custom link bindings:
 
 ```js
 // Transforms responses like {'@links': {comments: '/comments?post_id=123' }} into

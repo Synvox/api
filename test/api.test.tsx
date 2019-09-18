@@ -410,3 +410,38 @@ it('works with server error throwing error', async () => {
 
   expect(element!.textContent).toEqual('crash');
 });
+
+it('works with server error throwing error (non hook)', async () => {
+  mock.onPost('/error').reply(500, { error_value: 0 });
+
+  let err = null;
+  try {
+    await api.error.post();
+  } catch (e) {
+    err = e;
+  }
+
+  expect(err instanceof Error).toBe(true);
+  expect(err.response.data).toEqual({ errorValue: 0 });
+});
+
+it('works with server error throwing error (outside hook)', async () => {
+  mock.onPost('/error').reply(500, { error_value: 0 });
+
+  let api: UrlBuilder<unknown> | null = null;
+  renderSuspending(() => {
+    api = useApi();
+
+    return null;
+  });
+
+  let err = null;
+  try {
+    await api!.error.post();
+  } catch (e) {
+    err = e;
+  }
+
+  expect(err instanceof Error).toBe(true);
+  expect(err.response.data).toEqual({ errorValue: 0 });
+});
