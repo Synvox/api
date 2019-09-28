@@ -232,13 +232,17 @@ export function createApi(
 
       // count up new keys
       for (let key of newKeys) {
-        cache.get(key)!.subscribersCount += 1;
+        const item = cache.get(key);
+        if (!item) continue;
+        item.subscribersCount += 1;
       }
 
       // and count down old keys until they are removed
       for (let key of removedKeys) {
-        cache.get(key)!.subscribersCount -= 1;
-        if (cache.get(key)!.subscribersCount <= 0) {
+        const item = cache.get(key);
+        if (!item) continue;
+        item.subscribersCount -= 1;
+        if (item.subscribersCount <= 0) {
           cache.delete(key);
         }
       }
