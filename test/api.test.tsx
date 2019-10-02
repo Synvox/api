@@ -45,8 +45,30 @@ function bindLinks(object: any, loadUrl: (url: string) => unknown) {
   return returned;
 }
 
+function dedup(item: any): { [key: string]: any } {
+  if (!item || typeof item !== 'object') return {};
+  if (Array.isArray(item))
+    return item.map(dedup).reduce((a, b) => ({ ...a, ...b }), {});
+
+  const result: { [key: string]: any } = {};
+
+  for (let value of Object.values(item)) {
+    Object.assign(result, dedup(value));
+  }
+
+  if (item['@url']) {
+    result[item['@url']] = item;
+  }
+
+  return result;
+}
+
 const { useApi, api, touch, reset } = createApi(axios, {
   modifier: bindLinks,
+  deduplicationStrategy: (item: any) => {
+    const others = dedup(item);
+    return others;
+  },
 });
 
 function renderSuspending(fn: FunctionComponent) {
@@ -360,6 +382,40 @@ it('supports modifiers', async () => {
   let element = await waitForElement(() => queryByTestId(`element`));
 
   expect(element!.textContent).toEqual('count:1');
+});
+
+it('supports dependents', async () => {
+  mock.onGet('/list').reply(() => [200, [{ val: 1, '@url': '/list/1' }]]);
+
+  let setState: any;
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    const [doRequest, s] = useState(true);
+    setState = s;
+
+    if (doRequest) api.list() as { val: number }[];
+
+    try {
+      const { val } = doRequest
+        ? (api.list[1]() as { val: number })
+        : { val: 0 };
+
+      return <div data-testid={`element-${val}`}>{val}</div>;
+    } catch (e) {
+      // this should not suspend
+      throw new Error();
+    }
+  });
+
+  let element = await waitForElement(() => queryByTestId(`element-1`));
+  expect(element!.textContent).toEqual('1');
+
+  act(() => {
+    setState(false);
+  });
+
+  element = await waitForElement(() => queryByTestId(`element-0`));
+  expect(element!.textContent).toEqual('0');
 });
 
 it('works with 404 returning null', async () => {

@@ -250,6 +250,41 @@ const { useApi } = createApi(axios, {
 });
 ```
 
+## Defining nested dependencies
+
+Say you call `/comments` which returns `Comment[]` and want each `Comment` to be loaded into the cache individually so calling `/comments/:id` doesn't make another request. You can do this by setting a deduplication strategy.
+
+```js
+// will update the cache for all all `{"@url": ...} objects
+function deduplicationStrategy(item: any): { [key: string]: any } {
+  if (!item || typeof item !== 'object') return {};
+  if (Array.isArray(item))
+    return item
+      .map(deduplicationStrategy)
+      .reduce((a, b) => ({ ...a, ...b }), {});
+
+  const result: { [key: string]: any } = {};
+
+  for (let value of Object.values(item)) {
+    Object.assign(result, deduplicationStrategy(value));
+  }
+
+  if (item['@url']) {
+    result[item['@url']] = item;
+  }
+
+  return result;
+}
+
+const { useApi, api, touch, reset } = createApi(axios, {
+  modifier: bindLinks,
+  deduplicationStrategy: (item: any) => {
+    const others = deduplicationStrategy(item);
+    return others;
+  },
+});
+```
+
 ## Case Transformations
 
 By default `createApi` will `snake_case` urls, params, and json bodies in a request and `camelCase` json bodies in responses.

@@ -23,6 +23,7 @@ type Cache = Map<
   string,
   {
     subscribersCount: number;
+    dependentKeys: string[];
     value: unknown;
     promise: Promise<unknown> | null;
   }
@@ -49,10 +50,12 @@ export function createApi(
     requestCase = 'snake',
     responseCase = 'camel',
     modifier = x => x,
+    deduplicationStrategy = () => ({}),
   }: {
     requestCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'none';
     responseCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'none';
     modifier?: (data: unknown, loadUrl: (url: string) => unknown) => any;
+    deduplicationStrategy?: (data: any) => { [url: string]: any };
   } = {}
 ) {
   const caseToServer = caseMethods[requestCase];
@@ -62,9 +65,9 @@ export function createApi(
   const subscribers: Subscribers = new Set();
 
   function setKey(key: string, value: unknown) {
-    const subscribersCount = cache.has(key)
-      ? cache.get(key)!.subscribersCount
-      : 0;
+    const item = cache.get(key);
+    const subscribersCount = item ? item.subscribersCount : 0;
+    const dependentKeys = item ? item.dependentKeys : [];
 
     // registering promises in the cache does not require
     // subscribing components to update.
@@ -73,6 +76,7 @@ export function createApi(
         value: undefined,
         promise: value as Promise<unknown>,
         subscribersCount,
+        dependentKeys,
       });
 
       return;
@@ -86,9 +90,23 @@ export function createApi(
         },
         promise: null,
         subscribersCount,
+        dependentKeys,
       });
     } else {
-      cache.set(key, { value, promise: null, subscribersCount });
+      const otherKeys = deduplicationStrategy(value);
+      const dependentKeys = Object.keys(otherKeys);
+
+      cache.set(key, { value, promise: null, subscribersCount, dependentKeys });
+      for (let key in otherKeys) {
+        if (!cache.get(key)) {
+          cache.set(key, {
+            value: otherKeys[key],
+            promise: null,
+            subscribersCount: 0,
+            dependentKeys: [],
+          });
+        }
+      }
     }
 
     subscribers.forEach(ref => ref.current && ref.current(key));
@@ -233,6 +251,9 @@ export function createApi(
       // count up new keys
       for (let key of newKeys) {
         const item = cache.get(key);
+        // this shouldn't happen but if
+        // it does we don't want to crash
+        /* istanbul ignore next  */
         if (!item) continue;
         item.subscribersCount += 1;
       }
@@ -240,10 +261,25 @@ export function createApi(
       // and count down old keys until they are removed
       for (let key of removedKeys) {
         const item = cache.get(key);
+        // this shouldn't happen but if
+        // it does we don't want to crash
+        /* istanbul ignore next  */
         if (!item) continue;
         item.subscribersCount -= 1;
         if (item.subscribersCount <= 0) {
           cache.delete(key);
+
+          // Find all records dependant on this record and
+          // remove those that have no subscribers.
+          const { dependentKeys } = item;
+          for (let dependentKey of dependentKeys) {
+            const dependentItem = cache.get(dependentKey);
+            // this shouldn't happen but if
+            // it does we don't want to crash
+            /* istanbul ignore next  */
+            if (!dependentItem) continue;
+            if (dependentItem.subscribersCount <= 0) cache.delete(dependentKey);
+          }
         }
       }
 
