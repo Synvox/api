@@ -14,7 +14,7 @@ npm i @synvox/api axios
 
 ## CodeSandbox
 
-[![Open on CodeSandbox](https://codesandbox.io/static/img/play-codesandbox.svg)](https://codesandbox.io/s/stupefied-easley-l9djw?fontsize=14)
+[![Edit on CodeSandbox](https://codesandbox.io/static/img/play-codesandbox.svg)](https://codesandbox.io/s/goofy-albattani-oq838?fontsize=14)
 
 ## Features
 
