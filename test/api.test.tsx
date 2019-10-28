@@ -7,10 +7,10 @@ import React, {
 import { render, cleanup, waitForElement } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import axios from 'axios';
+import { act } from 'react-dom/test-utils';
 import MockAdapter from 'axios-mock-adapter';
 
-import { createApi, UrlBuilder, useSuspend } from '../src';
-import { act } from 'react-dom/test-utils';
+import { createApi, UrlBuilder, defer } from '../src';
 
 let mock = new MockAdapter(axios, { delayResponse: 1 });
 
@@ -63,7 +63,7 @@ function dedup(item: any): { [key: string]: any } {
   return result;
 }
 
-const { useApi, api, touch, reset } = createApi(axios, {
+const { useApi, api, touch, reset, preload } = createApi(axios, {
   modifier: bindLinks,
   deduplicationStrategy: (item: any) => {
     const others = dedup(item);
@@ -171,8 +171,7 @@ it('deduplicates requests with suspend', async () => {
 
   const { queryByTestId } = renderSuspending(() => {
     const api = useApi();
-    const suspend = useSuspend();
-    const { data: value } = suspend(
+    const { data: value } = defer(
       () => api.values[123]() as { someValue: number }
     );
 
@@ -186,15 +185,14 @@ it('deduplicates requests with suspend', async () => {
   expect(element!.textContent).toEqual('yes');
 });
 
-it('works with useSuspend', async () => {
+it('works with suspend', async () => {
   mock.onGet('/values/123').reply(200, { some_value: 123 });
 
   let wasLoading = false;
 
   const { queryByTestId } = renderSuspending(() => {
     const api = useApi();
-    const suspend = useSuspend();
-    const { data: value, loading } = suspend(
+    const { data: value, loading } = defer(
       () => api.values[123]() as { someValue: number }
     );
 
@@ -416,6 +414,79 @@ it('supports dependents', async () => {
 
   element = await waitForElement(() => queryByTestId(`element-0`));
   expect(element!.textContent).toEqual('0');
+});
+
+it('supports preloading', async () => {
+  mock.onGet('/users').reply(() => [200, [{ id: 1, name: 'Billy' }]]);
+  mock.onGet('/posts').reply(() => [200, [{ id: 2, body: 'post body' }]]);
+
+  let users: any = null;
+  let posts: any = null;
+
+  let renders = 0;
+  let api: UrlBuilder<unknown> | null = null;
+  let promise: Promise<any> | null = null;
+  renderSuspending(() => {
+    renders++;
+    api = useApi();
+
+    promise = Promise.all([
+      preload(() => {
+        users = api!.users();
+      }),
+      preload(() => {
+        posts = api!.posts();
+      }),
+    ]);
+
+    return null;
+  });
+
+  expect(renders).toEqual(1);
+
+  await promise;
+  expect(users).toEqual([{ id: 1, name: 'Billy' }]);
+  expect(posts).toEqual([{ id: 2, body: 'post body' }]);
+
+  await act(async () => {
+    await touch('users');
+  });
+
+  // make sure the component is not subscribed
+  expect(renders).toEqual(1);
+});
+
+it('supports preloading outside components', async () => {
+  mock.onGet('/users').reply(() => [200, [{ id: 1, name: 'Billy' }]]);
+  mock.onGet('/posts').reply(() => [200, [{ id: 2, body: 'post body' }]]);
+
+  const promise = Promise.all([
+    preload(() => {
+      api!.users();
+    }),
+    preload(() => {
+      api!.posts();
+    }),
+  ]);
+
+  await promise;
+
+  let renders = 0;
+  let finished = false;
+  renderSuspending(() => {
+    renders++;
+    const api = useApi();
+
+    // these should not suspend because they are preloaded
+    api!.users();
+    api!.posts();
+
+    finished = true;
+    return null;
+  });
+
+  expect(renders).toEqual(1);
+  expect(finished).toEqual(true);
 });
 
 it('works with 404 returning null', async () => {

@@ -30,7 +30,7 @@ type Cache = Map<
 >;
 
 function useForceUpdate() {
-  // @TODO this should be a low priority update when concurrent mode is done
+  // @TODO this should be a low priority update when concurrent mode is stable
   const update = useState({})[1];
 
   const forceUpdate = () => {
@@ -62,7 +62,10 @@ export function createApi(
   const caseFromServer = caseMethods[responseCase];
 
   let cache: Cache = new Map();
+  /** Set of refs of callbacks for components subscribing to any api call */
   const subscribers: Subscribers = new Set();
+  /** Whether or not calling an api will subscribe this component, used in preload */
+  let doSubscription = true;
 
   function setKey(key: string, value: unknown) {
     const item = cache.get(key);
@@ -114,9 +117,9 @@ export function createApi(
 
   function loadUrl(
     key: string,
-    subscribeComponentTo: (url: string) => void
+    subscribeComponentTo?: (url: string) => void
   ): unknown {
-    subscribeComponentTo(key);
+    if (subscribeComponentTo) subscribeComponentTo(key);
 
     const { value = undefined, promise: existingPromise = undefined } =
       cache.get(key) || {};
@@ -153,6 +156,49 @@ export function createApi(
     setKey(key, promise);
 
     throw promise;
+  }
+
+  function createAxiosProxy<T>(
+    getSuspendedValue: (url: string) => undefined | T
+  ) {
+    const api = createProxy<T>(
+      caseToServer,
+      (
+        method: Method,
+        path: string,
+        params: object,
+        options: Partial<AxiosRequestConfig>
+      ) => {
+        const qs = queryString.stringify(transformKeys(params, caseToServer), {
+          arrayFormat: 'bracket',
+        });
+
+        const url = path + (qs ? `?${qs}` : '');
+
+        let suspended = getSuspendedValue(url);
+        if (suspended !== undefined) return suspended;
+
+        return axios({
+          ...options,
+          data:
+            'data' in options
+              ? transformKeys(options.data, caseToServer)
+              : undefined,
+          method,
+          url,
+        }).catch(err => {
+          if (err.response) {
+            err.response.data = transformKeys(
+              err.response.data,
+              caseFromServer
+            );
+          }
+          throw err;
+        }) as AxiosPromise;
+      }
+    );
+
+    return api;
   }
 
   async function touch(...edges: string[]) {
@@ -286,104 +332,82 @@ export function createApi(
       previousKeysRef.current = keysRef.current;
     });
 
-    // @TODO it would be nice to be able to specify a schema for query builders
-    const api = createProxy<unknown>(
-      caseToServer,
-      (
-        method: Method,
-        path: string,
-        params: object,
-        options: Partial<AxiosRequestConfig>
-      ) => {
-        const qs = queryString.stringify(transformKeys(params, caseToServer), {
-          arrayFormat: 'bracket',
-        });
-
-        const url = path + (qs ? `?${qs}` : '');
-
-        if (!isSuspending) {
-          return axios({
-            ...options,
-            data:
-              'data' in options
-                ? transformKeys(options.data, caseToServer)
-                : undefined,
-            method,
-            url,
-          }).catch(err => {
-            if (err.response) {
-              err.response.data = transformKeys(
-                err.response.data,
-                caseFromServer
-              );
-            }
-            throw err;
-          }) as AxiosPromise;
-        }
-
+    const api = createAxiosProxy<unknown>(url => {
+      if (!isSuspending && doSubscription) return undefined;
+      else {
         return loadUrl(url, (url: string) => {
+          if (!doSubscription) return;
           if (!keysRef.current.has(url)) keysRef.current.add(url);
         });
       }
-    );
+    });
 
     return api;
   }
 
   /**
    * @example
-   *   await api.comments.post({}, { data: { body: '123' }})
+   *   const axiosResponse = await api.comments.post({}, { data: { body: '123' }})
    */
-  const api = createProxy<AxiosPromise>(
-    caseToServer,
-    (
-      method: Method,
-      path: string,
-      params: object,
-      options: Partial<AxiosRequestConfig>
-    ) => {
-      const qs = transformKeys(queryString.stringify(params), caseToServer);
 
-      const url = path + (qs ? `?${qs}` : '');
-
-      return axios({
-        ...options,
-        data:
-          'data' in options
-            ? transformKeys(options.data, caseToServer)
-            : undefined,
-        method,
-        url,
-      }).catch(err => {
-        if (err.response) {
-          err.response.data = transformKeys(err.response.data, caseFromServer);
-        }
-        throw err;
-      });
-    }
-  );
+  const api = createAxiosProxy<unknown>(url => {
+    if (doSubscription) return undefined;
+    return loadUrl(url);
+  });
 
   function reset() {
     cache = new Map();
   }
 
-  return { touch, useApi, api, reset };
-}
-
-export function useSuspend() {
-  const forceUpdate = useForceUpdate();
-
-  function suspend<T>(call: () => T, defaultValue?: T) {
-    try {
-      return { data: call(), loading: false };
-    } catch (e) {
-      if (!isPromise(e)) throw e;
-
-      e.then(forceUpdate);
-
-      return { data: defaultValue, loading: true };
+  /**
+   * Preload api calls without suspending or subscribing this component
+   * Returns a promise that is fulfilled when the request(s) are cached.
+   * @param fns functions that may suspend
+   * @example
+   *
+   * const api = useApi() // using the hook is necessary
+   *
+   * preload(() => {
+   *   api.users(); // preload users without suspending or subscribing this component
+   * });
+   *
+   * preload(() => {
+   *   api.posts(); // preload posts
+   * });
+   *
+   * preload(() => {
+   *   // also works with multiple calls
+   *   const user = api.users.me();
+   *   const tasks = api.tasks({ userId: user.id });
+   * });
+   *
+   */
+  async function preload(fn: () => void) {
+    // continue until success
+    while (true) {
+      try {
+        doSubscription = false;
+        fn();
+        doSubscription = true;
+        break;
+      } catch (e) {
+        doSubscription = true;
+        if (!isPromise(e)) throw e;
+        // make sure promise fires
+        await e;
+      }
     }
   }
 
-  return suspend;
+  return { touch, useApi, api, reset, preload };
+}
+
+export function defer<T>(call: () => T, defaultValue?: T) {
+  try {
+    return { data: call(), loading: false };
+  } catch (e) {
+    if (!isPromise(e)) throw e;
+
+    return { data: defaultValue, loading: true };
+  }
 }

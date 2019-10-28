@@ -6,7 +6,7 @@
 ![License](https://badgen.net/npm/license/@synvox/api)
 [![Language grade: JavaScript](https://img.shields.io/lgtm/grade/javascript/g/Synvox/api.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Synvox/api/context:javascript)
 
-Simple request handling in React using Suspense.
+Simple HTTP calls in React using Suspense.
 
 ```
 npm i @synvox/api axios
@@ -23,6 +23,8 @@ npm i @synvox/api axios
   - `useApi` a suspense compatible hook for loading data
   - `api` a wrapper around axios
   - `touch(...keys: string[])` to refetch queries
+  - `defer<T>(() => T, defaultValue: T): {data: T, loading:boolean}` to defer an HTTP call
+  - `preload(() => any): Promise<void>` to preload an HTTP call
 - Run any `GET` request through Suspense
 - Refresh requests without flickering
 - De-duplicates `GET` requests to the same url
@@ -194,15 +196,62 @@ export async function logout() {
 }
 ```
 
-## Not Suspending
+## Preloading (and avoiding waterfall requests)
 
-If you'd rather not use the suspense boundary for whatever reason, then use `useSuspend` which returns a `suspend` function:
+Suspense will wait for promises to fulfill before resuming a render which means requests are _not_ loaded parallel. While this is fine for many components, you may want to start the loading of many requests at once. To do this call `preload`:
 
 ```js
-const api = useApi();
-const suspend = useSuspend();
+import { preload, useApi } from './api';
 
-const { data: users, loading } = suspend(() => api.users(), []);
+function Component() {
+  const api = useApi();
+
+  // use the same way you would in a render phase
+  preload(() => api.users());
+  preload(() => api.posts());
+
+  // suspend for /users
+  const users = api.users();
+
+  // suspend for /posts, but the promise for posts will have
+  // already been created in the preload call above.
+  const posts = api.posts();
+
+  return (
+    <nav>
+      <a
+        href="/tasks"
+        onMouseDown={() => {
+          // use preload in a handler if you want
+          preload(() => {
+            // works with multiple calls
+            const user = api.users.me();
+            const tasks = api.tasks({ userId: user.id });
+          });
+        }}
+      >
+        Tasks
+      </a>
+    </nav>
+  );
+}
+```
+
+## Deferring Requests (make request, but don't suspend)
+
+If you need to make a request but need to defer until after the first render, then use `defer`:
+
+```js
+import { defer } from '@synvox/api';
+
+function Component() {
+  const api = useApi();
+
+  const { data: users, loading } = defer(() => api.users(), []);
+
+  if (loading) return <Spinner />;
+  return <UsersList users={users} />;
+}
 ```
 
 This still subscribes the component to updates from `touch`, request de-duplication, and garbage collection.
@@ -276,7 +325,7 @@ function deduplicationStrategy(item: any): { [key: string]: any } {
   return result;
 }
 
-const { useApi, api, touch, reset } = createApi(axios, {
+const { useApi, api, touch, reset, preload } = createApi(axios, {
   modifier: bindLinks,
   deduplicationStrategy: (item: any) => {
     const others = deduplicationStrategy(item);
