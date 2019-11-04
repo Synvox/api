@@ -63,7 +63,7 @@ function dedup(item: any): { [key: string]: any } {
   return result;
 }
 
-const { useApi, api, touch, reset, preload } = createApi(axios, {
+const { useApi, api, touch, reset, preload, save, restore } = createApi(axios, {
   modifier: bindLinks,
   deduplicationStrategy: (item: any) => {
     const others = dedup(item);
@@ -571,4 +571,36 @@ it('works with server error throwing error (outside hook)', async () => {
 
   expect(err instanceof Error).toBe(true);
   expect(err.response.data).toEqual({ errorValue: 0 });
+});
+
+it('can save to a POJO', async () => {
+  mock.onGet('/thing').reply(200, { value: 0 });
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    api.thing();
+    return <div data-testid="element" />;
+  });
+
+  await waitForElement(() => queryByTestId('element'));
+
+  expect(save()).toEqual({ '/thing': { value: 0 } });
+});
+
+it('can restore from a POJO', async () => {
+  mock.onGet('/thing').reply(200, { value: 0 });
+  restore({ '/thing': { value: 0 } });
+
+  let renders = 0;
+  const { queryByTestId } = renderSuspending(() => {
+    renders++;
+    const api = useApi();
+    api.thing();
+    return <div data-testid="element" />;
+  });
+
+  await waitForElement(() => queryByTestId('element'));
+
+  // make sure the call did not suspend
+  expect(renders).toBe(1);
 });

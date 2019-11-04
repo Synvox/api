@@ -399,7 +399,28 @@ export function createApi(
     }
   }
 
-  return { touch, useApi, api, reset, preload };
+  function save() {
+    const returned: { [key: string]: unknown } = {};
+    cache.forEach(({ value }, key) => {
+      if (value !== undefined) returned[key] = value;
+    });
+    return returned;
+  }
+
+  function restore(saveFile: { [key: string]: unknown }) {
+    for (let [key, value] of Object.entries(saveFile)) {
+      if (!cache.has(key)) {
+        cache.set(key, {
+          value,
+          promise: null,
+          subscribersCount: 0,
+          dependentKeys: [],
+        });
+      }
+    }
+  }
+
+  return { touch, useApi, api, reset, preload, save, restore };
 }
 
 export function defer<T>(call: () => T, defaultValue?: T) {

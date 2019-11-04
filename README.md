@@ -347,6 +347,22 @@ createApi(axios, {
 });
 ```
 
+## Saving and Restoring
+
+To save the cache call `save`:
+
+```js
+const { save, restore } = createApi(axios);
+localStorage.__cache = JSON.stringify(save());
+```
+
+To restore the cache call `restore`:
+
+```js
+const { save, restore } = createApi(axios);
+restore(window.data__from__SSR);
+```
+
 ## Why not just a `useEffect` hook or Redux?
 
 [See Comparison](comparison.md)
