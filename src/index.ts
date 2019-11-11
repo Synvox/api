@@ -186,15 +186,20 @@ export function createApi(
               : undefined,
           method,
           url,
-        }).catch(err => {
-          if (err.response) {
-            err.response.data = transformKeys(
-              err.response.data,
-              caseFromServer
-            );
-          }
-          throw err;
-        }) as AxiosPromise;
+        })
+          .then(res => {
+            res.data = transformKeys(res.data, caseFromServer);
+            return res;
+          })
+          .catch(err => {
+            if (err.response) {
+              err.response.data = transformKeys(
+                err.response.data,
+                caseFromServer
+              );
+            }
+            throw err;
+          }) as AxiosPromise;
       }
     );
 

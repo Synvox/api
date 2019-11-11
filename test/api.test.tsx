@@ -307,15 +307,15 @@ it('removes unused', async () => {
 });
 
 it('supports wrapping axios in api without hook', async () => {
-  mock.onPost('/val').reply(() => [200, { value: 'post!' }]);
+  mock.onPost('/val').reply(() => [200, { some_value: 'post!' }]);
   mock.onGet('/val?asdf=0').reply(() => [200, { value: 'get!' }]);
   const {
-    data: { value },
+    data: { someValue },
   } = (await api.val.post({}, { data: { somethingCool: '123' } })) as {
-    data: { value: string };
+    data: { someValue: string };
   };
 
-  expect(value).toEqual('post!');
+  expect(someValue).toEqual('post!');
   expect(mock.history.post[0].data).toBe(
     JSON.stringify({ something_cool: '123' })
   );
