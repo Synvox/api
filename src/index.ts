@@ -26,6 +26,7 @@ type Cache = Map<
     dependentKeys: string[];
     value: unknown;
     promise: Promise<unknown> | null;
+    deletionTimeout: ReturnType<typeof setTimeout> | null;
   }
 >;
 
@@ -71,6 +72,11 @@ export function createApi(
     const item = cache.get(key);
     const subscribersCount = item ? item.subscribersCount : 0;
     const dependentKeys = item ? item.dependentKeys : [];
+    const deletionTimeout = item ? item.deletionTimeout : null;
+
+    if (deletionTimeout) {
+      clearTimeout(deletionTimeout);
+    }
 
     // registering promises in the cache does not require
     // subscribing components to update.
@@ -80,6 +86,7 @@ export function createApi(
         promise: value as Promise<unknown>,
         subscribersCount,
         dependentKeys,
+        deletionTimeout: null,
       });
 
       return;
@@ -94,12 +101,19 @@ export function createApi(
         promise: null,
         subscribersCount,
         dependentKeys,
+        deletionTimeout: null,
       });
     } else {
       const otherKeys = deduplicationStrategy(value);
       const dependentKeys = Object.keys(otherKeys);
 
-      cache.set(key, { value, promise: null, subscribersCount, dependentKeys });
+      cache.set(key, {
+        value,
+        promise: null,
+        subscribersCount,
+        dependentKeys,
+        deletionTimeout: null,
+      });
       for (let key in otherKeys) {
         if (!cache.get(key)) {
           cache.set(key, {
@@ -107,6 +121,7 @@ export function createApi(
             promise: null,
             subscribersCount: 0,
             dependentKeys: [],
+            deletionTimeout: null,
           });
         }
       }
@@ -121,8 +136,15 @@ export function createApi(
   ): unknown {
     if (subscribeComponentTo) subscribeComponentTo(key);
 
-    const { value = undefined, promise: existingPromise = undefined } =
-      cache.get(key) || {};
+    const {
+      value = undefined,
+      promise: existingPromise = undefined,
+      deletionTimeout,
+    } = cache.get(key) || {};
+
+    if (deletionTimeout) {
+      clearTimeout(deletionTimeout);
+    }
 
     // return early if the value is already loaded
     if (value !== undefined) {
@@ -214,7 +236,14 @@ export function createApi(
     const cacheKeys = Array.from(cache.keys());
     for (let key of casedEdges) {
       for (let cacheKey of cacheKeys) {
+        const item = cache.get(cacheKey);
+        if (!item) continue;
         if (!cacheKey.includes(key)) continue;
+        if (item.subscribersCount <= 0) {
+          if (item.deletionTimeout) clearTimeout(item.deletionTimeout);
+          cache.delete(key);
+        }
+
         keysToReset.push(cacheKey);
       }
     }
@@ -286,6 +315,20 @@ export function createApi(
       subscribers.add(subscription);
       return () => {
         subscribers.delete(subscription);
+
+        const keys = Array.from(keysRef.current);
+
+        for (let key of keys) {
+          const item = cache.get(key);
+          // this shouldn't happen but if
+          // it does we don't want to crash
+          /* istanbul ignore next  */
+          if (!item) continue;
+          item.subscribersCount -= 1;
+          if (item.subscribersCount <= 0) {
+            deferRemoveKey(key);
+          }
+        }
       };
     }, []);
 
@@ -318,19 +361,7 @@ export function createApi(
         if (!item) continue;
         item.subscribersCount -= 1;
         if (item.subscribersCount <= 0) {
-          cache.delete(key);
-
-          // Find all records dependant on this record and
-          // remove those that have no subscribers.
-          const { dependentKeys } = item;
-          for (let dependentKey of dependentKeys) {
-            const dependentItem = cache.get(dependentKey);
-            // this shouldn't happen but if
-            // it does we don't want to crash
-            /* istanbul ignore next  */
-            if (!dependentItem) continue;
-            if (dependentItem.subscribersCount <= 0) cache.delete(dependentKey);
-          }
+          deferRemoveKey(key);
         }
       }
 
@@ -348,6 +379,31 @@ export function createApi(
     });
 
     return api;
+  }
+
+  function deferRemoveKey(key: string) {
+    const item = cache.get(key);
+    if (!item) return;
+
+    const timeout = setTimeout(() => {
+      const item = cache.get(key);
+      if (!item) return;
+      cache.delete(key);
+
+      // Find all records dependant on this record and
+      // remove those that have no subscribers.
+      const { dependentKeys } = item;
+      for (let dependentKey of dependentKeys) {
+        const dependentItem = cache.get(dependentKey);
+        // this shouldn't happen but if
+        // it does we don't want to crash
+        /* istanbul ignore next  */
+        if (!dependentItem) continue;
+        if (dependentItem.subscribersCount <= 0) cache.delete(dependentKey);
+      }
+    }, 1000 * 60 * 3);
+
+    item.deletionTimeout = timeout;
   }
 
   /**
@@ -420,6 +476,7 @@ export function createApi(
           promise: null,
           subscribersCount: 0,
           dependentKeys: [],
+          deletionTimeout: null,
         });
       }
     }

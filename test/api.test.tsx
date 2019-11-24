@@ -12,6 +12,38 @@ import MockAdapter from 'axios-mock-adapter';
 
 import { createApi, UrlBuilder, defer } from '../src';
 
+const timers: { [id: number]: any } = {};
+let timerKey = 0;
+const realSetTimeout = global.setTimeout;
+const realClearTimeout = global.clearTimeout;
+function mockSetTimeout(innerFn: any, time: number) {
+  function caller() {
+    realClearTimeout(timeout);
+    innerFn();
+    delete timers[key];
+  }
+
+  const key = timerKey++;
+  const timeout = realSetTimeout(caller, time);
+
+  timers[key] = caller;
+
+  return key;
+}
+
+function mockClearTimeout(id: number) {
+  if (timers[id]) delete timers[id];
+}
+
+function advanceTimers() {
+  for (let id in timers) {
+    timers[id]();
+  }
+}
+
+global.setTimeout = mockSetTimeout as typeof setTimeout;
+global.clearTimeout = mockClearTimeout as typeof clearTimeout;
+
 let mock = new MockAdapter(axios, { delayResponse: 1 });
 
 // Example hateoas link binder
@@ -166,7 +198,7 @@ it('deduplicates requests', async () => {
   expect(element!.textContent).toEqual('yes');
 });
 
-it('deduplicates requests with suspend', async () => {
+it('deduplicates requests with defer', async () => {
   mock.onGet('/values/123').reply(200, { some_value: 123 });
 
   const { queryByTestId } = renderSuspending(() => {
@@ -185,7 +217,7 @@ it('deduplicates requests with suspend', async () => {
   expect(element!.textContent).toEqual('yes');
 });
 
-it('works with suspend', async () => {
+it('works with defer', async () => {
   mock.onGet('/values/123').reply(200, { some_value: 123 });
 
   let wasLoading = false;
@@ -283,6 +315,8 @@ it('removes unused', async () => {
     return null;
   });
 
+  advanceTimers();
+
   let element = await waitForElement(() => queryByTestId(`element-1`));
 
   expect(element!.textContent).toEqual('1');
@@ -291,6 +325,8 @@ it('removes unused', async () => {
     setIndex(2);
   });
 
+  advanceTimers();
+
   element = await waitForElement(() => queryByTestId(`element-2`));
 
   expect(element!.textContent).toEqual('2');
@@ -298,6 +334,8 @@ it('removes unused', async () => {
   act(() => {
     setIndex(1);
   });
+
+  advanceTimers();
 
   element = await waitForElement(() => queryByTestId(`element-1`));
 
