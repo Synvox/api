@@ -71,6 +71,7 @@ export function createApi(
   function setKey(key: string, value: unknown) {
     const item = cache.get(key);
     const subscribersCount = item ? item.subscribersCount : 0;
+    const existingValue = item ? item.value : undefined;
     const dependentKeys = item ? item.dependentKeys : [];
     const deletionTimeout = item ? item.deletionTimeout : null;
 
@@ -82,7 +83,7 @@ export function createApi(
     // subscribing components to update.
     if (isPromise(value)) {
       cache.set(key, {
-        value: undefined,
+        value: existingValue,
         promise: value as Promise<unknown>,
         subscribersCount,
         dependentKeys,
@@ -242,6 +243,7 @@ export function createApi(
         if (item.subscribersCount <= 0) {
           if (item.deletionTimeout) clearTimeout(item.deletionTimeout);
           cache.delete(key);
+          continue;
         }
 
         keysToReset.push(cacheKey);
@@ -249,31 +251,38 @@ export function createApi(
     }
 
     const keyValues = await Promise.all(
-      keysToReset.map(async cacheKey => {
-        // re-run the axios call. This should be an a similar call to the call in `loadUrl`
-        const data = await axios({
-          url: cacheKey,
-          method: 'get',
-        })
-          .then(({ data }) => {
-            // run the transform here and not in setKey in case there is an error
-            return transformKeys(data, caseFromServer);
+      keysToReset.map(cacheKey => {
+        const refresh = async () => {
+          // re-run the axios call. This should be an a similar call to the call in `loadUrl`
+          const data = await axios({
+            url: cacheKey,
+            method: 'get',
           })
-          .catch(err => {
-            if (err.response) {
-              if (err.response.status === 404) return null;
-              else {
-                err.response.data = transformKeys(
-                  err.response.data,
-                  caseFromServer
-                );
+            .then(({ data }) => {
+              // run the transform here and not in setKey in case there is an error
+              return transformKeys(data, caseFromServer);
+            })
+            .catch(err => {
+              if (err.response) {
+                if (err.response.status === 404) return null;
+                else {
+                  err.response.data = transformKeys(
+                    err.response.data,
+                    caseFromServer
+                  );
+                }
               }
-            }
 
-            return err;
-          });
+              return err;
+            });
 
-        return [cacheKey, data];
+          return [cacheKey, data];
+        };
+
+        const promise = refresh();
+        setKey(cacheKey, promise);
+
+        return promise;
       })
     );
 
