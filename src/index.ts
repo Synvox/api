@@ -115,6 +115,7 @@ export function createApi(
         dependentKeys,
         deletionTimeout: null,
       });
+
       for (let key in otherKeys) {
         if (!cache.get(key)) {
           cache.set(key, {
@@ -242,7 +243,8 @@ export function createApi(
         if (!cacheKey.includes(key)) continue;
         if (item.subscribersCount <= 0) {
           if (item.deletionTimeout) clearTimeout(item.deletionTimeout);
-          cache.delete(key);
+          cache.delete(cacheKey);
+
           continue;
         }
 
