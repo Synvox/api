@@ -95,7 +95,16 @@ function dedup(item: any): { [key: string]: any } {
   return result;
 }
 
-const { useApi, api, touch, reset, preload, save, restore } = createApi(axios, {
+const {
+  useApi,
+  api,
+  touch,
+  touchWithMatcher,
+  reset,
+  preload,
+  save,
+  restore,
+} = createApi(axios, {
   modifier: bindLinks,
   deduplicationStrategy: (item: any) => {
     const others = dedup(item);
@@ -168,11 +177,43 @@ it('works with query params', async () => {
 });
 
 it('works with url params', async () => {
-  mock.onGet('/values/123').reply(200, { some_value: 123 });
+  const { useApi } = createApi(axios, {
+    urlCase: 'kebab',
+    modifier: bindLinks,
+    deduplicationStrategy: (item: any) => {
+      const others = dedup(item);
+      return others;
+    },
+  });
+
+  mock.onGet('/some-case-stuff/123').reply(200, { some_value: 123 });
 
   const { queryByTestId } = renderSuspending(() => {
     const api = useApi();
-    const value = api.values[123]() as { someValue: number };
+    const value = api.someCaseStuff[123]() as { someValue: number };
+
+    return <div data-testid="element">{value.someValue}</div>;
+  });
+
+  const element = await waitForElement(() => queryByTestId('element'));
+
+  expect(element!.textContent).toEqual('123');
+});
+
+it('works with url params snake case', async () => {
+  const { useApi } = createApi(axios, {
+    modifier: bindLinks,
+    deduplicationStrategy: (item: any) => {
+      const others = dedup(item);
+      return others;
+    },
+  });
+
+  mock.onGet('/some_case_stuff/123').reply(200, { some_value: 123 });
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    const value = api.someCaseStuff[123]() as { someValue: number };
 
     return <div data-testid="element">{value.someValue}</div>;
   });
@@ -240,6 +281,12 @@ it('works with defer', async () => {
 
   expect(wasLoading).toBe(true);
   expect(element!.textContent).toEqual('123');
+
+  expect(() => {
+    defer(() => {
+      throw new Error();
+    });
+  }).toThrow();
 });
 
 it('refetches when touch is called', async () => {
@@ -270,6 +317,52 @@ it('refetches when touch is called', async () => {
 
   await act(async () => {
     await touch('val', 'null');
+  });
+
+  element = await waitForElement(() =>
+    queryByTestId(`element-${valueRef.current}`)
+  );
+
+  expect(element!.textContent).toEqual('2 null');
+
+  await act(async () => {
+    // make sure touching something else does not cause this to rerender
+    await touch('something');
+  });
+
+  expect(rerenders).toBe(3);
+});
+
+it('refetches when touchWithMatcher is called', async () => {
+  let valueRef = { current: 1 };
+  let rerenders = 0;
+  mock.onGet('/val').reply(() => [200, { value: valueRef.current }]);
+  mock.onGet('/null').reply(() => [404]);
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    const { value } = api.val.get() as { value: number };
+    const nothing = api.null.get() as string | null;
+    rerenders++;
+
+    return (
+      <div data-testid={`element-${value}`}>
+        {value} {nothing === null ? 'null' : ''}
+      </div>
+    );
+  });
+
+  let element = await waitForElement(() =>
+    queryByTestId(`element-${valueRef.current}`)
+  );
+
+  expect(element!.textContent).toEqual('1 null');
+  valueRef.current = 2;
+
+  await act(async () => {
+    await touchWithMatcher((url: string, item: any) => {
+      return url === '/null' || item; // make sure item is passed and is truthy
+    });
   });
 
   element = await waitForElement(() =>
@@ -492,6 +585,16 @@ it('supports preloading', async () => {
 
   // make sure the component is not subscribed
   expect(renders).toEqual(1);
+
+  let threw = false;
+  try {
+    await preload(() => {
+      throw new Error();
+    });
+  } catch (_) {
+    threw = true;
+  }
+  expect(threw).toBeTruthy();
 });
 
 it('supports preloading outside components', async () => {

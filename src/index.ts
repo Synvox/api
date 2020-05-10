@@ -7,13 +7,14 @@ import realAxios, {
   AxiosRequestConfig,
   AxiosPromise,
 } from 'axios';
-
 import createProxy from './proxy';
 import { transformKeys, caseMethods, transformKey } from './case';
 
 export type UrlBuilder<ReturnType> = {
   [segment: string]: UrlBuilder<ReturnType>;
-  (params?: object, config?: object): Promise<ReturnType> | ReturnType;
+  (params?: object, config?: AxiosRequestConfig):
+    | Promise<ReturnType>
+    | ReturnType;
 };
 
 type Subscription = (key: string) => void;
@@ -45,28 +46,44 @@ function isPromise(value: any) {
   return value && typeof value.then === 'function';
 }
 
-export function createApi(
+export function createApi<BaseType>(
   axios: AxiosInstance = realAxios,
   {
     requestCase = 'snake',
     responseCase = 'camel',
+    urlCase = requestCase,
     modifier = x => x,
     deduplicationStrategy = () => ({}),
+    cache = new Map(),
+    onUpdateCache = () => {},
   }: {
-    requestCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'none';
-    responseCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'none';
+    requestCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
+    responseCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
+    urlCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
     modifier?: (data: unknown, loadUrl: (url: string) => unknown) => any;
     deduplicationStrategy?: (data: any) => { [url: string]: any };
+    cache?: Cache;
+    onUpdateCache?: () => void;
   } = {}
 ) {
   const caseToServer = caseMethods[requestCase];
   const caseFromServer = caseMethods[responseCase];
+  const caseForUrls = caseMethods[urlCase];
 
-  let cache: Cache = new Map();
   /** Set of refs of callbacks for components subscribing to any api call */
   const subscribers: Subscribers = new Set();
   /** Whether or not calling an api will subscribe this component, used in preload */
   let doSubscription = true;
+
+  let realOnUpdateCache = onUpdateCache;
+  let onUpdateCacheTimeout: ReturnType<typeof setTimeout> | null = null;
+  onUpdateCache = function() {
+    if (onUpdateCacheTimeout) clearTimeout(onUpdateCacheTimeout);
+    onUpdateCacheTimeout = setTimeout(() => {
+      realOnUpdateCache();
+      clearTimeout(onUpdateCacheTimeout!);
+    }, 0);
+  };
 
   function setKey(key: string, value: unknown) {
     const item = cache.get(key);
@@ -130,12 +147,13 @@ export function createApi(
     }
 
     subscribers.forEach(ref => ref.current && ref.current(key));
+    onUpdateCache();
   }
 
   function loadUrl(
     key: string,
     subscribeComponentTo?: (url: string) => void
-  ): unknown {
+  ): BaseType {
     if (subscribeComponentTo) subscribeComponentTo(key);
 
     const {
@@ -182,11 +200,11 @@ export function createApi(
     throw promise;
   }
 
-  function createAxiosProxy<T>(
+  function createAxiosProxy<T = BaseType>(
     getSuspendedValue: (url: string) => undefined | T
   ) {
     const api = createProxy<T>(
-      caseToServer,
+      caseForUrls,
       (
         method: Method,
         path: string,
@@ -203,13 +221,13 @@ export function createApi(
         if (suspended !== undefined) return suspended;
 
         return axios({
+          method,
+          url,
           ...options,
           data:
             'data' in options
               ? transformKeys(options.data, caseToServer)
               : undefined,
-          method,
-          url,
         })
           .then(res => {
             res.data = transformKeys(res.data, caseFromServer);
@@ -230,26 +248,23 @@ export function createApi(
     return api;
   }
 
-  async function touch(...edges: string[]) {
+  async function touchWithMatcher(
+    matcher: (key: string, value: BaseType) => boolean
+  ) {
     let keysToReset = [];
-    const casedEdges = edges.map(edge => transformKey(edge, caseToServer));
 
     // find the keys that these edges touch. E.g. `users` should touch `/users/1`
     const cacheKeys = Array.from(cache.keys());
-    for (let key of casedEdges) {
-      for (let cacheKey of cacheKeys) {
-        const item = cache.get(cacheKey);
-        if (!item) continue;
-        if (!cacheKey.includes(key)) continue;
-        if (item.subscribersCount <= 0) {
-          if (item.deletionTimeout) clearTimeout(item.deletionTimeout);
-          cache.delete(cacheKey);
-
-          continue;
-        }
-
-        keysToReset.push(cacheKey);
+    for (let cacheKey of cacheKeys) {
+      const item = cache.get(cacheKey)!;
+      if (!matcher(cacheKey, item.value as BaseType)) continue;
+      if (item.subscribersCount <= 0) {
+        if (item.deletionTimeout) clearTimeout(item.deletionTimeout);
+        cache.delete(cacheKey);
+        continue;
       }
+
+      keysToReset.push(cacheKey);
     }
 
     const keyValues = await Promise.all(
@@ -291,6 +306,13 @@ export function createApi(
     for (let [key, value] of keyValues) {
       setKey(key, value);
     }
+
+    onUpdateCache();
+  }
+
+  async function touch(...edges: string[]) {
+    const casedEdges = edges.map(edge => transformKey(edge, caseToServer));
+    return touchWithMatcher(str => casedEdges.some(edge => str.includes(edge)));
   }
 
   /**
@@ -379,7 +401,7 @@ export function createApi(
       previousKeysRef.current = keysRef.current;
     });
 
-    const api = createAxiosProxy<unknown>(url => {
+    const api = createAxiosProxy<BaseType>(url => {
       if (!isSuspending && doSubscription) return undefined;
       else {
         return loadUrl(url, (url: string) => {
@@ -422,7 +444,7 @@ export function createApi(
    *   const axiosResponse = await api.comments.post({}, { data: { body: '123' }})
    */
 
-  const api = createAxiosProxy<unknown>(url => {
+  const api = createAxiosProxy<BaseType>(url => {
     if (doSubscription) return undefined;
     return loadUrl(url);
   });
@@ -493,7 +515,16 @@ export function createApi(
     }
   }
 
-  return { touch, useApi, api, reset, preload, save, restore };
+  return {
+    touch,
+    touchWithMatcher,
+    useApi,
+    api,
+    reset,
+    preload,
+    save,
+    restore,
+  };
 }
 
 export function defer<T>(call: () => T, defaultValue?: T) {

@@ -12,6 +12,9 @@ export const caseMethods: {
   snake(word, index) {
     return index === 0 ? word : '_' + word;
   },
+  kebab(word, index) {
+    return index === 0 ? word : '-' + word;
+  },
   constant(word, index) {
     return index === 0 ? word.toUpperCase() : '_' + word.toUpperCase();
   },

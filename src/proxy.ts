@@ -9,8 +9,8 @@ type Callback<ReturnType> = (
   options: Partial<AxiosRequestConfig>
 ) => ReturnType | AxiosPromise<ReturnType>;
 
-function createProxy<ReturnType = unknown>(
-  caseToServer: CaseMethod,
+function createProxy<ReturnType>(
+  caseForUrls: CaseMethod,
   callback: Callback<ReturnType>,
   path: string[] = ['']
 ): UrlBuilder<ReturnType> {
@@ -34,9 +34,9 @@ function createProxy<ReturnType = unknown>(
 
   const proxy = new Proxy(callable, {
     get: (_, prop) => {
-      return createProxy<ReturnType>(caseToServer, callback, [
+      return createProxy<ReturnType>(caseForUrls, callback, [
         ...path,
-        transformKey(String(prop), caseToServer),
+        transformKey(String(prop), caseForUrls),
       ]);
     },
   });
