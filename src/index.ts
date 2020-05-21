@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import queryString from 'query-string';
+import queryString from 'qs';
 import realAxios, {
   AxiosError,
   AxiosInstance,
@@ -212,7 +212,7 @@ export function createApi<BaseType>(
         options: Partial<AxiosRequestConfig>
       ) => {
         const qs = queryString.stringify(transformKeys(params, caseToServer), {
-          arrayFormat: 'bracket',
+          encodeValuesOnly: true,
         });
 
         const url = path + (qs ? `?${qs}` : '');
@@ -311,7 +311,7 @@ export function createApi<BaseType>(
   }
 
   async function touch(...edges: string[]) {
-    const casedEdges = edges.map(edge => transformKey(edge, caseToServer));
+    const casedEdges = edges.map(edge => transformKey(edge, caseForUrls));
     return touchWithMatcher(str => casedEdges.some(edge => str.includes(edge)));
   }
 

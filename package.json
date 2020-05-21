@@ -29,16 +29,17 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^4.1.0",
     "@testing-library/react": "^9.1.4",
-    "@types/react": "^16.9.2",
     "@types/jest": "^24.0.18",
+    "@types/qs": "^6.9.3",
+    "@types/react": "^16.9.2",
+    "axios": "^0.19.0",
     "axios-mock-adapter": "^1.17.0",
     "husky": "^3.0.5",
+    "react": "^16.9.0",
     "react-dom": "^16.9.0",
     "tsdx": "^0.9.1",
     "tslib": "^1.10.0",
-    "typescript": "^3.6.2",
-    "axios": "^0.19.0",
-    "react": "^16.9.0"
+    "typescript": "^3.6.2"
   },
   "peerDependencies": {
     "axios": "^0.19.0",
@@ -46,7 +47,7 @@
   },
   "dependencies": {
     "debug": "^4.1.1",
-    "query-string": "^6.8.3"
+    "qs": "^6.9.4"
   },
   "jest": {
     "coverageDirectory": "./coverage/",
