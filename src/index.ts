@@ -56,6 +56,8 @@ export function createApi<BaseType>(
     deduplicationStrategy = () => ({}),
     cache = new Map(),
     onUpdateCache = () => {},
+    loadUrlFromCache = async () => {},
+    touchCache = async () => {},
   }: {
     requestCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
     responseCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
@@ -64,6 +66,8 @@ export function createApi<BaseType>(
     deduplicationStrategy?: (data: any) => { [url: string]: any };
     cache?: Cache;
     onUpdateCache?: () => void;
+    loadUrlFromCache?: (url: string) => Promise<any>;
+    touchCache?: (edges: string[]) => Promise<any>;
   } = {}
 ) {
   const caseToServer = caseMethods[requestCase];
@@ -152,9 +156,15 @@ export function createApi<BaseType>(
 
   function loadUrl(
     key: string,
-    subscribeComponentTo?: (url: string) => void
+    {
+      keys,
+      valueCache,
+    }: {
+      keys?: Set<string>;
+      valueCache?: WeakMap<any, any>;
+    } = {}
   ): BaseType {
-    if (subscribeComponentTo) subscribeComponentTo(key);
+    if (keys && !keys.has(key)) keys.add(key);
 
     const {
       value = undefined,
@@ -168,7 +178,18 @@ export function createApi<BaseType>(
 
     // return early if the value is already loaded
     if (value !== undefined) {
-      return modifier(value, key => loadUrl(key, subscribeComponentTo));
+      if (!valueCache || typeof value !== 'object' || value === null)
+        return modifier(value, key => loadUrl(key, { keys, valueCache }));
+
+      if (valueCache.has(value)) return valueCache.get(value);
+
+      const modifiedValue = modifier(value, key =>
+        loadUrl(key, { keys, valueCache })
+      );
+
+      valueCache.set(value, modifiedValue);
+
+      return modifiedValue;
     }
 
     // piggy back promises to the same key
@@ -177,23 +198,30 @@ export function createApi<BaseType>(
     }
 
     // if the value is not yet loaded, create a promise that will load the value
-    const promise = axios({
-      url: key,
-      method: 'get',
-    })
-      .then(async ({ data }: { data: any }) => {
+    const promise = loadUrlFromCache(key).then(async data => {
+      if (data !== undefined) {
         data = transformKeys(data, caseFromServer);
 
         setKey(key, data);
-      })
-      .catch((err: AxiosError) => {
-        // not found errors can just set null
-        if (err.response && err.response.status === 404)
-          return setKey(key, null);
+      } else
+        await axios({
+          url: key,
+          method: 'get',
+        })
+          .then(async ({ data }: { data: any }) => {
+            data = transformKeys(data, caseFromServer);
 
-        // every other error should throw
-        setKey(key, err);
-      });
+            setKey(key, data);
+          })
+          .catch((err: AxiosError) => {
+            // not found errors can just set null
+            if (err.response && err.response.status === 404)
+              return setKey(key, null);
+
+            // every other error should throw
+            setKey(key, err);
+          });
+    });
 
     setKey(key, promise);
 
@@ -312,6 +340,7 @@ export function createApi<BaseType>(
 
   async function touch(...edges: string[]) {
     const casedEdges = edges.map(edge => transformKey(edge, caseForUrls));
+    await touchCache(casedEdges);
     return touchWithMatcher(str => casedEdges.some(edge => str.includes(edge)));
   }
 
@@ -324,6 +353,7 @@ export function createApi<BaseType>(
   function useApi() {
     const keysRef = useRef(new Set<string>());
     const previousKeysRef = useRef(new Set<string>());
+    const valueWeakMap = useRef(new WeakMap<any, any>());
 
     // If the previous render suspended, the pending keys will be in keysRef.
     // This is to make sure those are included as potential "previous keys".
@@ -404,9 +434,10 @@ export function createApi<BaseType>(
     const api = createAxiosProxy<BaseType>(url => {
       if (!isSuspending && doSubscription) return undefined;
       else {
-        return loadUrl(url, (url: string) => {
-          if (!doSubscription) return;
-          if (!keysRef.current.has(url)) keysRef.current.add(url);
+        if (!doSubscription) return loadUrl(url);
+        return loadUrl(url, {
+          keys: keysRef.current,
+          valueCache: valueWeakMap.current,
         });
       }
     });

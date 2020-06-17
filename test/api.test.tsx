@@ -110,6 +110,13 @@ const {
     const others = dedup(item);
     return others;
   },
+  loadUrlFromCache: async url => {
+    if (url === '/from_cache') {
+      return { derp: 'derp' };
+    }
+
+    return undefined;
+  },
 });
 
 function renderSuspending(fn: FunctionComponent) {
@@ -500,17 +507,18 @@ it('supports modifiers', async () => {
   const { queryByTestId } = renderSuspending(() => {
     const api = useApi();
     const val = api.val.get() as { name: string; count: number };
+    const val2 = api.val.get() as { name: string; count: number };
 
     return (
       <div data-testid="element">
-        {val.name}:{val.count}
+        {val.name}:{val.count}:{String(val === val2)}
       </div>
     );
   });
 
   let element = await waitForElement(() => queryByTestId(`element`));
 
-  expect(element!.textContent).toEqual('count:1');
+  expect(element!.textContent).toEqual('count:1:true');
 });
 
 it('supports dependents', async () => {
@@ -744,4 +752,17 @@ it('can restore from a POJO', async () => {
 
   // make sure the call did not suspend
   expect(renders).toBe(1);
+});
+
+it('can load from an external cache', async () => {
+  let val = null;
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    val = api.fromCache();
+    return <div data-testid="element" />;
+  });
+
+  await waitForElement(() => queryByTestId('element'));
+
+  expect(val).toEqual({ derp: 'derp' });
 });
