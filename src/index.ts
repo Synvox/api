@@ -46,6 +46,14 @@ function isPromise(value: any) {
   return value && typeof value.then === 'function';
 }
 
+function getMaybeError<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    return e;
+  }
+}
+
 export function createApi<BaseType>(
   axios: AxiosInstance = realAxios,
   {
@@ -92,7 +100,7 @@ export function createApi<BaseType>(
   function setKey(key: string, value: unknown) {
     const item = cache.get(key);
     const subscribersCount = item ? item.subscribersCount : 0;
-    const existingValue = item ? item.value : undefined;
+    const existingValue = item ? getMaybeError(() => item.value) : undefined;
     const dependentKeys = item ? item.dependentKeys : [];
     const deletionTimeout = item ? item.deletionTimeout : null;
 
@@ -285,7 +293,9 @@ export function createApi<BaseType>(
     const cacheKeys = Array.from(cache.keys());
     for (let cacheKey of cacheKeys) {
       const item = cache.get(cacheKey)!;
-      if (!matcher(cacheKey, item.value as BaseType)) continue;
+      const value = getMaybeError(() => item.value);
+
+      if (!matcher(cacheKey, value as BaseType)) continue;
       if (item.subscribersCount <= 0) {
         if (item.deletionTimeout) clearTimeout(item.deletionTimeout);
         cache.delete(cacheKey);

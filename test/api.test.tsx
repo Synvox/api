@@ -299,13 +299,30 @@ it('works with defer', async () => {
 it('refetches when touch is called', async () => {
   let valueRef = { current: 1 };
   let rerenders = 0;
+  let doError = true;
+  let didError = null;
   mock.onGet('/val').reply(() => [200, { value: valueRef.current }]);
   mock.onGet('/null').reply(() => [404]);
+  mock.onGet('/error').reply(() => {
+    if (doError) {
+      doError = false;
+      return [500];
+    }
+    return [200];
+  });
 
   const { queryByTestId } = renderSuspending(() => {
     const api = useApi();
     const { value } = api.val.get() as { value: number };
     const nothing = api.null.get() as string | null;
+    try {
+      api.error.get();
+      didError = false;
+    } catch (e) {
+      if (!(e instanceof Error)) throw e;
+      didError = true;
+    }
+
     rerenders++;
 
     return (
@@ -322,8 +339,10 @@ it('refetches when touch is called', async () => {
   expect(element!.textContent).toEqual('1 null');
   valueRef.current = 2;
 
+  expect(didError).toBe(true);
+
   await act(async () => {
-    await touch('val', 'null');
+    await touch('val', 'null', 'error');
   });
 
   element = await waitForElement(() =>
@@ -331,6 +350,7 @@ it('refetches when touch is called', async () => {
   );
 
   expect(element!.textContent).toEqual('2 null');
+  expect(didError).toBe(false);
 
   await act(async () => {
     // make sure touching something else does not cause this to rerender
