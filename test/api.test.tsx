@@ -893,3 +893,18 @@ it('reads axios options from provider (headers)', async () => {
 
   expect(value2).toEqual('get!');
 });
+
+it('works with query params that start with _', async () => {
+  mock.onGet('/users?__a=1').reply(200, [{ id: 1, name: 'John Smith' }]);
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    const users = api.users({ __a: 1 }) as { id: number; name: string }[];
+
+    return <div data-testid="element">{users.length}</div>;
+  });
+
+  const element = await waitForElement(() => queryByTestId('element'));
+
+  expect(element!.textContent).toEqual('1');
+});

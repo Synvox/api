@@ -25,6 +25,13 @@ export const caseMethods: {
 
 export function transformKey(key: string, method: CaseMethod) {
   if (method === null) return key;
+  let prefix = '';
+
+  key = key.replace(/^_+/, p => {
+    prefix = p;
+    return '';
+  });
+
   return key
     .replace(/_/g, ' ')
     .replace(/(\b|^|[a-z])([A-Z])/g, '$1 $2')
@@ -32,10 +39,7 @@ export function transformKey(key: string, method: CaseMethod) {
     .trim()
     .toLowerCase()
     .split(' ')
-    .reduce(
-      (str, word, index) => str + method(word, index),
-      key.startsWith('_') ? '_' : ''
-    );
+    .reduce((str, word, index) => str + method(word, index), prefix);
 }
 
 export function transformKeys(obj: any, method: CaseMethod): any {
