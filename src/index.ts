@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  createContext,
+  useContext,
+} from 'react';
 import queryString from 'qs';
 import realAxios, {
   AxiosError,
@@ -30,6 +37,8 @@ type Cache = Map<
     deletionTimeout: ReturnType<typeof setTimeout> | null;
   }
 >;
+
+const axiosOptionsContext = createContext<AxiosRequestConfig>({});
 
 function useForceUpdate() {
   // @TODO this should be a low priority update when concurrent mode is stable
@@ -170,7 +179,8 @@ export function createApi<BaseType>(
     }: {
       keys?: Set<string>;
       valueCache?: WeakMap<any, any>;
-    } = {}
+    } = {},
+    axiosOptions: Partial<AxiosRequestConfig> = {}
   ): BaseType {
     if (keys && !keys.has(key)) keys.add(key);
 
@@ -215,6 +225,7 @@ export function createApi<BaseType>(
         await axios({
           url: key,
           method: 'get',
+          ...axiosOptions,
         })
           .then(async ({ data }: { data: any }) => {
             data = transformKeys(data, caseFromServer);
@@ -237,7 +248,8 @@ export function createApi<BaseType>(
   }
 
   function createAxiosProxy<T = BaseType>(
-    getSuspendedValue: (url: string) => undefined | T
+    getSuspendedValue: (url: string) => undefined | T,
+    { params: optionsParams, ...axiosOptions }: AxiosRequestConfig = {}
   ) {
     const api = createProxy<T>(
       caseForUrls,
@@ -247,9 +259,12 @@ export function createApi<BaseType>(
         params: object,
         options: Partial<AxiosRequestConfig>
       ) => {
-        const qs = queryString.stringify(transformKeys(params, caseToServer), {
-          encodeValuesOnly: true,
-        });
+        const qs = queryString.stringify(
+          transformKeys({ ...optionsParams, ...params }, caseToServer),
+          {
+            encodeValuesOnly: true,
+          }
+        );
 
         const url = path + (qs ? `?${qs}` : '');
 
@@ -259,6 +274,7 @@ export function createApi<BaseType>(
         return axios({
           method,
           url,
+          ...axiosOptions,
           ...options,
           data:
             'data' in options
@@ -361,6 +377,7 @@ export function createApi<BaseType>(
    *   // do something with users
    */
   function useApi() {
+    const axiosOptions = useContext(axiosOptionsContext) || {};
     const keysRef = useRef(new Set<string>());
     const previousKeysRef = useRef(new Set<string>());
     const valueWeakMap = useRef(new WeakMap<any, any>());
@@ -444,13 +461,18 @@ export function createApi<BaseType>(
     const api = createAxiosProxy<BaseType>(url => {
       if (!isSuspending && doSubscription) return undefined;
       else {
+        const { params: _, ...axiosOptionsWithoutParams } = axiosOptions;
         if (!doSubscription) return loadUrl(url);
-        return loadUrl(url, {
-          keys: keysRef.current,
-          valueCache: valueWeakMap.current,
-        });
+        return loadUrl(
+          url,
+          {
+            keys: keysRef.current,
+            valueCache: valueWeakMap.current,
+          },
+          axiosOptionsWithoutParams
+        );
       }
-    });
+    }, axiosOptions);
 
     return api;
   }
@@ -576,4 +598,17 @@ export function defer<T>(call: () => T, defaultValue?: T) {
 
     return { data: defaultValue, loading: true };
   }
+}
+
+export function AxiosOptionsProvider({
+  children,
+  options = {},
+}: {
+  children: React.ReactNode;
+  options: AxiosRequestConfig;
+}) {
+  return React.createElement(axiosOptionsContext.Provider, {
+    value: options,
+    children,
+  });
 }

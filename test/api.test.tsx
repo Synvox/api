@@ -6,11 +6,11 @@ import React, {
 } from 'react';
 import { render, cleanup, waitForElement } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import axios from 'axios';
+import axios, { AxiosRequestConfig } from 'axios';
 import { act } from 'react-dom/test-utils';
 import MockAdapter from 'axios-mock-adapter';
 
-import { createApi, UrlBuilder, defer } from '../src';
+import { createApi, UrlBuilder, defer, AxiosOptionsProvider } from '../src';
 
 const timers: { [id: number]: any } = {};
 let timerKey = 0;
@@ -785,4 +785,111 @@ it('can load from an external cache', async () => {
   await waitForElement(() => queryByTestId('element'));
 
   expect(val).toEqual({ derp: 'derp' });
+});
+
+it('reads axios options from provider (query params)', async () => {
+  function renderSuspending(fn: FunctionComponent) {
+    const Component = fn;
+
+    return render(
+      <AxiosOptionsProvider options={{ params: { a: 1 } }}>
+        <React.Suspense fallback={null}>
+          <Component />
+        </React.Suspense>
+      </AxiosOptionsProvider>
+    );
+  }
+
+  mock.onGet('/users?a=1&b=1').reply(200, [{ id: 1, name: 'John Smith' }]);
+  mock.onGet('/users?a=1').reply(200, [{ id: 2, name: 'Jane Doe' }]);
+  let api: ReturnType<typeof useApi> | null = null;
+  const { queryByTestId } = renderSuspending(() => {
+    const a = useApi();
+    api = a;
+    const users = api.users({ b: 1 }) as { id: number; name: string }[];
+
+    return <div data-testid="element">{users.map(u => u.name).join(',')}</div>;
+  });
+
+  const element = await waitForElement(() => queryByTestId('element'));
+
+  expect(element!.textContent).toEqual('John Smith');
+
+  mock.onPost('/val?a=1').reply(() => [200, { value: 'post!' }]);
+  mock.onGet('/val?a=1').reply(() => [200, { value: 'get!' }]);
+
+  const {
+    data: { value },
+  } = (await api!.val.post({}, { data: { somethingCool: '123' } })) as {
+    data: { value: string };
+  };
+
+  expect(value).toEqual('post!');
+  expect(mock.history.post[0].data).toBe(
+    JSON.stringify({ something_cool: '123' })
+  );
+
+  const {
+    data: { value: value2 },
+  } = (await api!.val()) as {
+    data: { value: string };
+  };
+
+  expect(value2).toEqual('get!');
+});
+
+it('reads axios options from provider (headers)', async () => {
+  const token = 'abc';
+  function renderSuspending(fn: FunctionComponent) {
+    const Component = fn;
+
+    return render(
+      <AxiosOptionsProvider options={{ headers: { token } }}>
+        <React.Suspense fallback={null}>
+          <Component />
+        </React.Suspense>
+      </AxiosOptionsProvider>
+    );
+  }
+
+  const withToken = (reply: any) => (config: AxiosRequestConfig) =>
+    config.headers.token === token ? reply : [404];
+
+  mock
+    .onGet('/users?b=1')
+    .reply(withToken([200, [{ id: 1, name: 'John Smith' }]]));
+  let api: ReturnType<typeof useApi> | null = null;
+  const { queryByTestId } = renderSuspending(() => {
+    const a = useApi();
+    api = a;
+    const users = api.users({ b: 1 }) as { id: number; name: string }[];
+
+    return <div data-testid="element">{users.map(u => u.name).join(',')}</div>;
+  });
+
+  const element = await waitForElement(() => queryByTestId('element'));
+
+  expect(element!.textContent).toEqual('John Smith');
+
+  mock.onPost('/val').reply(withToken([200, { value: 'post!' }]));
+  mock.onGet('/val').reply(withToken([200, { value: 'get!' }]));
+
+  const {
+    data: { value },
+  } = (await api!.val.post({}, { data: { somethingCool: '123' } })) as {
+    data: { value: string };
+  };
+
+  expect(value).toEqual('post!');
+  expect(mock.history.post[0].data).toBe(
+    JSON.stringify({ something_cool: '123' })
+  );
+
+  const {
+    data: { value: value2 },
+  } = (await api!.val()) as {
+    data: { value: string };
+  };
+
+  expect(value2).toEqual('get!');
 });
