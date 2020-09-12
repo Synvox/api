@@ -16,7 +16,11 @@ const timers: { [id: number]: any } = {};
 let timerKey = 0;
 const realSetTimeout = global.setTimeout;
 const realClearTimeout = global.clearTimeout;
-function mockSetTimeout(innerFn: any, time: number) {
+function mockSetTimeout(
+  innerFn: any,
+  // time is not actually used in the mock.
+  _time: number
+) {
   function caller() {
     realClearTimeout(timeout);
     innerFn();
@@ -24,7 +28,7 @@ function mockSetTimeout(innerFn: any, time: number) {
   }
 
   const key = timerKey++;
-  const timeout = realSetTimeout(caller, time);
+  const timeout = realSetTimeout(caller, 1);
 
   timers[key] = caller;
 
@@ -105,6 +109,8 @@ const {
   save,
   restore,
 } = createApi(axios, {
+  requestCase: 'snake',
+  responseCase: 'camel',
   modifier: bindLinks,
   deduplicationStrategy: (item: any) => {
     const others = dedup(item);
@@ -185,6 +191,8 @@ it('works with query params', async () => {
 
 it('works with url params', async () => {
   const { useApi } = createApi(axios, {
+    requestCase: 'snake',
+    responseCase: 'camel',
     urlCase: 'kebab',
     modifier: bindLinks,
     deduplicationStrategy: (item: any) => {
@@ -209,6 +217,8 @@ it('works with url params', async () => {
 
 it('works with url params snake case', async () => {
   const { useApi } = createApi(axios, {
+    requestCase: 'snake',
+    responseCase: 'camel',
     modifier: bindLinks,
     deduplicationStrategy: (item: any) => {
       const others = dedup(item);
@@ -907,4 +917,85 @@ it('works with query params that start with _', async () => {
   const element = await waitForElement(() => queryByTestId('element'));
 
   expect(element!.textContent).toEqual('1');
+});
+
+it('works with retries (pass)', async () => {
+  const { useApi, touch } = createApi(axios, {
+    retryCount: 10,
+  });
+
+  let didFail = false;
+  let count = 10;
+  mock.onGet('/thing').reply(() => {
+    if (count > 0) {
+      didFail = true;
+      count--;
+      return [500, { error: true }];
+    }
+
+    count = 10;
+    return [200, { someValue: 123 }];
+  });
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    const value = api.thing() as { someValue: number };
+
+    return <div data-testid="element">{value.someValue}</div>;
+  });
+
+  const element = await waitForElement(() => queryByTestId('element'));
+
+  expect(element!.textContent).toEqual('123');
+
+  expect(didFail).toBe(true);
+  didFail = false;
+
+  await act(async () => {
+    await touch('thing');
+  });
+
+  await waitForElement(() => queryByTestId('element'));
+
+  expect(didFail).toBe(true);
+});
+
+it('works with retries (fail)', async () => {
+  const { useApi, touch } = createApi(axios, {
+    retryCount: 10,
+  });
+
+  let requests = 0;
+  mock.onGet('/thing').reply(() => {
+    requests++;
+
+    return [500, { error: true }];
+  });
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    try {
+      const value = api.thing() as { someValue: number };
+      console.log({ value });
+
+      return <div data-testid="element">{value.someValue}</div>;
+    } catch (e) {
+      if (e instanceof Error) {
+        return <div data-testid="element">Error</div>;
+      } else throw e;
+    }
+  });
+
+  const element = await waitForElement(() => queryByTestId('element'));
+
+  expect(element!.textContent).toEqual('Error');
+  expect(requests).toBe(11);
+
+  await act(async () => {
+    await touch('thing');
+  });
+
+  const element2 = await waitForElement(() => queryByTestId('element'));
+  expect(element2!.textContent).toEqual('Error');
+  expect(requests).toBe(22);
 });

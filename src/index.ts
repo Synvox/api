@@ -66,8 +66,8 @@ function getMaybeError<T>(fn: () => T): T {
 export function createApi<BaseType>(
   axios: AxiosInstance = realAxios,
   {
-    requestCase = 'snake',
-    responseCase = 'camel',
+    requestCase = 'none',
+    responseCase = 'none',
     urlCase = requestCase,
     modifier = x => x,
     deduplicationStrategy = () => ({}),
@@ -75,6 +75,7 @@ export function createApi<BaseType>(
     onUpdateCache = () => {},
     loadUrlFromCache = async () => {},
     touchCache = async () => {},
+    retryCount = 0,
   }: {
     requestCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
     responseCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
@@ -85,6 +86,7 @@ export function createApi<BaseType>(
     onUpdateCache?: () => void;
     loadUrlFromCache?: (url: string) => Promise<any>;
     touchCache?: (edges: string[]) => Promise<any>;
+    retryCount?: number;
   } = {}
 ) {
   const caseToServer = caseMethods[requestCase];
@@ -221,7 +223,12 @@ export function createApi<BaseType>(
         data = transformKeys(data, caseFromServer);
 
         setKey(key, data);
-      } else
+        return;
+      }
+
+      let triesRemaining = retryCount;
+      let retryDelay = 1000;
+      const tryRequest = async () => {
         await axios({
           url: key,
           method: 'get',
@@ -232,14 +239,26 @@ export function createApi<BaseType>(
 
             setKey(key, data);
           })
-          .catch((err: AxiosError) => {
+          .catch(async (err: AxiosError) => {
             // not found errors can just set null
             if (err.response && err.response.status === 404)
               return setKey(key, null);
 
-            // every other error should throw
-            setKey(key, err);
+            if (triesRemaining === 0) {
+              // every other error should throw
+              setKey(key, err);
+            } else {
+              await new Promise(r =>
+                setTimeout(r, Math.min(30000, retryDelay))
+              );
+              triesRemaining--;
+              retryDelay *= 2;
+              return await tryRequest();
+            }
           });
+      };
+
+      await tryRequest();
     });
 
     setKey(key, promise);
@@ -323,31 +342,45 @@ export function createApi<BaseType>(
 
     const keyValues = await Promise.all(
       keysToReset.map(cacheKey => {
+        let retriesRemaining = retryCount;
+        let retryDelay = 1000;
         const refresh = async () => {
-          // re-run the axios call. This should be an a similar call to the call in `loadUrl`
-          const data = await axios({
-            url: cacheKey,
-            method: 'get',
-          })
-            .then(({ data }) => {
-              // run the transform here and not in setKey in case there is an error
-              return transformKeys(data, caseFromServer);
+          const tryRequest = async () => {
+            // re-run the axios call. This should be an a similar call to the call in `loadUrl`
+            const data: any = await axios({
+              url: cacheKey,
+              method: 'get',
             })
-            .catch(err => {
-              if (err.response) {
-                if (err.response.status === 404) return null;
-                else {
-                  err.response.data = transformKeys(
-                    err.response.data,
-                    caseFromServer
+              .then(({ data }) => {
+                // run the transform here and not in setKey in case there is an error
+                return transformKeys(data, caseFromServer);
+              })
+              .catch(async err => {
+                if (retriesRemaining > 0) {
+                  await new Promise(r =>
+                    setTimeout(r, Math.min(30000, retryDelay))
                   );
+                  retriesRemaining--;
+                  retryDelay *= 2;
+                  return await tryRequest();
                 }
-              }
 
-              return err;
-            });
+                if (err.response) {
+                  if (err.response.status === 404) return null;
+                  else {
+                    err.response.data = transformKeys(
+                      err.response.data,
+                      caseFromServer
+                    );
+                  }
+                }
 
-          return [cacheKey, data];
+                return err;
+              });
+            return data;
+          };
+
+          return [cacheKey, await tryRequest()];
         };
 
         const promise = refresh();

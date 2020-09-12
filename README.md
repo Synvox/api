@@ -336,14 +336,13 @@ const { useApi, api, touch, reset, preload } = createApi(axios, {
 
 ## Case Transformations
 
-By default `createApi` will `snake_case` urls, params, and json bodies in a request and `camelCase` json bodies in responses.
-
-This can be customized by passing a second parameter to `createApi`
+You can optionally specify a case transformation for request bodies, response bodies, and urls.
 
 ```js
 createApi(axios, {
-  requestCase: 'snake' | 'camel' | 'constant' | 'pascal' | 'none',
-  responseCase: 'snake' | 'camel' | 'constant' | 'pascal' | 'none',
+  requestCase: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none',
+  responseCase: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none',
+  urlCase: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none',
 });
 ```
 
@@ -361,6 +360,15 @@ To restore the cache call `restore`:
 ```js
 const { save, restore } = createApi(axios);
 restore(window.data__from__SSR);
+```
+
+## Retries
+
+Set `retryCount` to specify how many times failing `GET` requests should be retried. Requests are delayed by `1s` and double for each retry but will not delay longer than `30s`. E.g. `1s, 2s, 4s, 8s, ..., 30s`
+Retrying only applies to `GET` requests called in a render.
+
+```js
+createApi(axios, { retryCount: 10 });
 ```
 
 ## Why not just a `useEffect` hook or Redux?
