@@ -282,6 +282,7 @@ export function createApi<BaseType>(
           transformKeys({ ...optionsParams, ...params }, caseToServer),
           {
             encodeValuesOnly: true,
+            arrayFormat: 'brackets',
           }
         );
 

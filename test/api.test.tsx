@@ -976,7 +976,6 @@ it('works with retries (fail)', async () => {
     const api = useApi();
     try {
       const value = api.thing() as { someValue: number };
-      console.log({ value });
 
       return <div data-testid="element">{value.someValue}</div>;
     } catch (e) {
@@ -998,4 +997,25 @@ it('works with retries (fail)', async () => {
   const element2 = await waitForElement(() => queryByTestId('element'));
   expect(element2!.textContent).toEqual('Error');
   expect(requests).toBe(22);
+});
+
+it('serializes arrays to brackets', async () => {
+  const { useApi } = createApi(axios, {});
+
+  mock.onGet('/thing?include[]=derp&include[]=doo').reply(() => {
+    return [200, { someValue: 123 }];
+  });
+
+  const { queryByTestId } = renderSuspending(() => {
+    const api = useApi();
+    const value = api.thing({ include: ['derp', 'doo'] }) as {
+      someValue: number;
+    };
+
+    return <div data-testid="element">{value.someValue}</div>;
+  });
+
+  const element = await waitForElement(() => queryByTestId('element'));
+
+  expect(element!.textContent).toEqual('123');
 });
