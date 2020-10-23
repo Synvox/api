@@ -6,7 +6,7 @@ import React, {
   createContext,
   useContext,
 } from 'react';
-import queryString from 'qs';
+import queryString, { IStringifyOptions } from 'qs';
 import realAxios, {
   AxiosError,
   AxiosInstance,
@@ -76,6 +76,10 @@ export function createApi<BaseType>(
     loadUrlFromCache = async () => {},
     touchCache = async () => {},
     retryCount = 0,
+    qsOptions = {
+      encodeValuesOnly: true,
+      arrayFormat: 'brackets',
+    },
   }: {
     requestCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
     responseCase?: 'snake' | 'camel' | 'constant' | 'pascal' | 'kebab' | 'none';
@@ -87,6 +91,7 @@ export function createApi<BaseType>(
     loadUrlFromCache?: (url: string) => Promise<any>;
     touchCache?: (edges: string[]) => Promise<any>;
     retryCount?: number;
+    qsOptions?: IStringifyOptions;
   } = {}
 ) {
   const caseToServer = caseMethods[requestCase];
@@ -280,10 +285,7 @@ export function createApi<BaseType>(
       ) => {
         const qs = queryString.stringify(
           transformKeys({ ...optionsParams, ...params }, caseToServer),
-          {
-            encodeValuesOnly: true,
-            arrayFormat: 'brackets',
-          }
+          qsOptions
         );
 
         const url = path + (qs ? `?${qs}` : '');
