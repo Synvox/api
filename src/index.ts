@@ -422,7 +422,7 @@ export function createApi<BaseType>(
    *   const users = api.users() as User[]
    *   // do something with users
    */
-  function useApi() {
+  function useUrl() {
     const axiosOptions = useContext(axiosOptionsContext) || {};
     const keysRef = useRef(new Set<string>());
     const previousKeysRef = useRef(new Set<string>());
@@ -504,7 +504,7 @@ export function createApi<BaseType>(
       previousKeysRef.current = keysRef.current;
     });
 
-    const api = createAxiosProxy<BaseType>(url => {
+    function getUrl(url: string) {
       if (!isSuspending && doSubscription) return undefined;
       else {
         const { params: _, ...axiosOptionsWithoutParams } = axiosOptions;
@@ -518,6 +518,23 @@ export function createApi<BaseType>(
           axiosOptionsWithoutParams
         );
       }
+    }
+
+    return getUrl;
+  }
+
+  /**
+   * @example
+   *   const api = useApi()
+   *   const users = api.users() as User[]
+   *   // do something with users
+   */
+  function useApi() {
+    const getUrl = useUrl();
+    const axiosOptions = useContext(axiosOptionsContext) || {};
+
+    const api = createAxiosProxy<BaseType>(url => {
+      return getUrl(url);
     }, axiosOptions);
 
     return api;
@@ -630,6 +647,7 @@ export function createApi<BaseType>(
     touch,
     touchWithMatcher,
     useApi,
+    useUrl,
     api,
     reset,
     preload,
