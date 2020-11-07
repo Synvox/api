@@ -16,11 +16,7 @@ const timers: { [id: number]: any } = {};
 let timerKey = 0;
 const realSetTimeout = global.setTimeout;
 const realClearTimeout = global.clearTimeout;
-function mockSetTimeout(
-  innerFn: any,
-  // time is not actually used in the mock.
-  _time: number
-) {
+function mockSetTimeout(innerFn: any, time: number) {
   function caller() {
     realClearTimeout(timeout);
     innerFn();
@@ -28,7 +24,7 @@ function mockSetTimeout(
   }
 
   const key = timerKey++;
-  const timeout = realSetTimeout(caller, 1);
+  const timeout = realSetTimeout(caller, time);
 
   timers[key] = caller;
 
@@ -927,6 +923,9 @@ it('works with retries (pass)', async () => {
   let didFail = false;
   let count = 10;
   mock.onGet('/thing').reply(() => {
+    realSetTimeout(() => {
+      advanceTimers();
+    }, 10);
     if (count > 0) {
       didFail = true;
       count--;
@@ -967,6 +966,10 @@ it('works with retries (fail)', async () => {
 
   let requests = 0;
   mock.onGet('/thing').reply(() => {
+    realSetTimeout(() => {
+      advanceTimers();
+    }, 10);
+
     requests++;
 
     return [500, { error: true }];

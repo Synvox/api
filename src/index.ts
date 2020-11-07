@@ -135,6 +135,10 @@ export function createApi<BaseType>(
         deletionTimeout: null,
       });
 
+      if (subscribersCount <= 0) {
+        deferRemoveKey(key);
+      }
+
       return;
     }
 
@@ -161,6 +165,10 @@ export function createApi<BaseType>(
         deletionTimeout: null,
       });
 
+      if (subscribersCount <= 0) {
+        deferRemoveKey(key);
+      }
+
       for (let key in otherKeys) {
         if (!cache.get(key)) {
           cache.set(key, {
@@ -170,6 +178,8 @@ export function createApi<BaseType>(
             dependentKeys: [],
             deletionTimeout: null,
           });
+
+          deferRemoveKey(key);
         }
       }
     }
@@ -516,6 +526,8 @@ export function createApi<BaseType>(
   function deferRemoveKey(key: string) {
     const item = cache.get(key);
     if (!item) return;
+
+    if (item.deletionTimeout) clearTimeout(item.deletionTimeout);
 
     const timeout = setTimeout(() => {
       const item = cache.get(key);
