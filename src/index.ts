@@ -433,13 +433,6 @@ export function createApi<BaseType>(
     keysRef.current.forEach(key => previousKeysRef.current.add(key));
     keysRef.current = new Set<string>();
 
-    // We want this component to throw on all requests while it is in the render phase
-    // but not after. This effect switches it to non-suspending after the commit.
-    let isSuspending = true;
-    useLayoutEffect(() => {
-      isSuspending = false;
-    });
-
     const forceUpdate = useForceUpdate();
     const subscription = useRef<Subscription>(changedKey => {
       if (!keysRef.current.has(changedKey)) return;
@@ -505,19 +498,16 @@ export function createApi<BaseType>(
     });
 
     function getUrl(url: string) {
-      if (!isSuspending && doSubscription) return undefined;
-      else {
-        const { params: _, ...axiosOptionsWithoutParams } = axiosOptions;
-        if (!doSubscription) return loadUrl(url);
-        return loadUrl(
-          url,
-          {
-            keys: keysRef.current,
-            valueCache: valueWeakMap.current,
-          },
-          axiosOptionsWithoutParams
-        );
-      }
+      const { params: _, ...axiosOptionsWithoutParams } = axiosOptions;
+      if (!doSubscription) return loadUrl(url);
+      return loadUrl(
+        url,
+        {
+          keys: keysRef.current,
+          valueCache: valueWeakMap.current,
+        },
+        axiosOptionsWithoutParams
+      );
     }
 
     return getUrl;
@@ -533,8 +523,18 @@ export function createApi<BaseType>(
     const getUrl = useUrl();
     const axiosOptions = useContext(axiosOptionsContext) || {};
 
+    let isSuspending = true;
+    useLayoutEffect(() => {
+      isSuspending = false;
+    });
+
     const api = createAxiosProxy<BaseType>(url => {
-      return getUrl(url);
+      // We want this component to throw on all requests while it is in the render phase
+      // but not after. This effect switches it to non-suspending after the commit.
+      if (!isSuspending && doSubscription) return undefined;
+      else {
+        return getUrl(url);
+      }
     }, axiosOptions);
 
     return api;
